@@ -3,7 +3,7 @@ from django.db import connection
 from django_tenants.test.cases import FastTenantTestCase
 from rest_framework.test import APIClient
 
-from .models import Department, Employee
+from .models import Department, Employee, Role, UserProfile
 
 
 class _TenantTestBase(FastTenantTestCase):
@@ -192,3 +192,113 @@ class DepartmentEmployeeRulesTests(_TenantTestBase):
         self.assertEqual(resp.status_code, 400)
         self.dept.refresh_from_db()
         self.assertTrue(self.dept.is_active)  # still active — not removed
+
+
+class RoleTests(_TenantTestBase):
+    def setUp(self):
+        self.user = User.objects.create_user("role_admin", "r@test.local", "pw-123456789")
+        self.client = APIClient(HTTP_HOST=self.get_test_tenant_domain())
+        self.client.force_authenticate(self.user)
+
+    def test_system_roles_seeded(self):
+        names = set(Role.objects.filter(is_system=True).values_list("name", flat=True))
+        self.assertEqual(names, {"Administrator", "Standard User"})
+
+    def test_create_custom_role(self):
+        resp = self.client.post("/api/roles/", {"name": "Auditor"}, format="json")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()["role_type"], "custom")
+        self.assertFalse(resp.json()["is_system"])
+
+    def test_system_role_cannot_be_edited_or_deleted(self):
+        admin = Role.objects.get(name="Administrator")
+        edit = self.client.patch(f"/api/roles/{admin.id}/", {"name": "X"}, format="json")
+        self.assertEqual(edit.status_code, 400)
+        delete = self.client.delete(f"/api/roles/{admin.id}/")
+        self.assertEqual(delete.status_code, 400)
+
+    def test_clone_system_role(self):
+        admin = Role.objects.get(name="Administrator")
+        resp = self.client.post(
+            f"/api/roles/{admin.id}/clone/", {"name": "Admin Copy"}, format="json"
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertFalse(resp.json()["is_system"])
+        self.assertEqual(resp.json()["role_type"], "custom")
+
+    def test_delete_role_assigned_to_user_blocked_rol06(self):
+        role = Role.objects.create(name="Temp Role")
+        u = User.objects.create_user("holder", "h@test.local", "pw-123456789")
+        profile = UserProfile.objects.create(user=u)
+        profile.roles.add(role)
+        resp = self.client.delete(f"/api/roles/{role.id}/")
+        self.assertEqual(resp.status_code, 400)  # ROL-06
+        self.assertTrue(Role.objects.filter(id=role.id).exists())
+
+
+class ProvisioningTests(_TenantTestBase):
+    def setUp(self):
+        self.user = User.objects.create_user("prov_admin", "p@test.local", "pw-123456789")
+        self.client = APIClient(HTTP_HOST=self.get_test_tenant_domain())
+        self.client.force_authenticate(self.user)
+        self.dept = Department.objects.create(code="DEP-IT", name="IT")
+        self.emp = Employee.objects.create(
+            employee_code="EMP-100",
+            first_name="Grace",
+            last_name="Hopper",
+            designation="Engineer",
+            department=self.dept,
+            work_email="grace@acme.test",
+        )
+        self.role = Role.objects.get(name="Standard User")
+
+    def _provision(self, **over):
+        payload = {"password": "TempPass123456", "role_ids": [self.role.id]}
+        payload.update(over)
+        return self.client.post(
+            f"/api/employees/{self.emp.id}/provision-user/", payload, format="json"
+        )
+
+    def test_provision_success(self):
+        resp = self._provision()
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body["status"], "invited")
+        self.assertEqual(body["user"]["email"], "grace@acme.test")
+        self.assertEqual([r["name"] for r in body["roles"]], ["Standard User"])
+        self.emp.refresh_from_db()
+        self.assertTrue(hasattr(self.emp, "user_profile"))
+
+    def test_provision_requires_a_role_emp04(self):
+        resp = self._provision(role_ids=[])
+        self.assertEqual(resp.status_code, 400)
+
+    def test_cannot_provision_twice(self):
+        self.assertEqual(self._provision().status_code, 201)
+        again = self._provision(username="dup", email="other@acme.test")
+        self.assertEqual(again.status_code, 400)
+
+    def test_unique_email_enforced_usr03(self):
+        User.objects.create_user("taken", "grace@acme.test", "pw-123456789")
+        resp = self._provision()
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("email", resp.json())
+
+    def test_provisioned_user_can_authenticate(self):
+        self.assertEqual(self._provision().status_code, 201)
+        anon = APIClient(HTTP_HOST=self.get_test_tenant_domain())
+        token = anon.post(
+            "/api/auth/token/",
+            {"username": "grace", "password": "TempPass123456"},
+            format="json",
+        )
+        self.assertEqual(token.status_code, 200, token.content)
+        self.assertIn("access", token.json())
+
+    def test_deactivating_employee_disables_user_emp07(self):
+        self.assertEqual(self._provision().status_code, 201)
+        resp = self.client.post(f"/api/employees/{self.emp.id}/deactivate/")
+        self.assertEqual(resp.status_code, 200)
+        profile = UserProfile.objects.get(employee=self.emp)
+        self.assertEqual(profile.status, "deactivated")
+        self.assertFalse(profile.user.is_active)
