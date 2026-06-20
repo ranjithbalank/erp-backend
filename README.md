@@ -26,11 +26,33 @@ python -m venv .venv
 # source .venv/bin/activate     # macOS/Linux
 pip install -r requirements.txt
 cp .env.example .env            # then edit values
-python manage.py migrate
+python manage.py migrate_schemas --shared   # set up the public schema
 python manage.py runserver
 ```
 
 Health check: <http://localhost:8000/api/health/>
+
+## Multi-tenancy (Phase 0)
+
+Schema-per-tenant via [`django-tenants`](https://django-tenants.readthedocs.io)
+(TDR-001). **Requires PostgreSQL** — `DATABASE_URL` must point at a Postgres
+server (SQLite is not supported). The tenant is resolved from the request
+**hostname** by `TenantMainMiddleware` and is never taken from request
+body/params (RULE #1 — tenant isolation is a security boundary).
+
+- `SHARED_APPS` live in the `public` schema (platform registry of tenants).
+- `TENANT_APPS` are created fresh inside each tenant's own schema.
+
+Create a tenant + domain:
+
+```python
+from tenants.models import Client, Domain
+t = Client.objects.create(schema_name="acme", name="Acme Inc")   # creates schema
+Domain.objects.create(domain="acme.localhost", tenant=t, is_primary=True)
+```
+
+Then reach it at `http://acme.localhost:8000/`. Any `*.localhost` host is allowed
+in local dev (see `ALLOWED_HOSTS`).
 
 ## Branching model
 

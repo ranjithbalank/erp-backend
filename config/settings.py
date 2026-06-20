@@ -30,23 +30,50 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="django-insecure-dev-only-change-m
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env("DEBUG")
 
-ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+# ".localhost" allows any *.localhost subdomain (per-tenant hosts like
+# demo.localhost / test.localhost) for local dev and tests.
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1", ".localhost"])
 
 
 # Application definition
+#
+# Multi-tenancy: schema-per-tenant via django-tenants (TDR-001).
+# RULE #1 — tenant isolation is a security boundary. The public schema holds only
+# shared/platform data; every tenant gets its own isolated schema.
+#
+# SHARED_APPS live in the `public` schema (platform-wide).
+# TENANT_APPS are created fresh inside each tenant's schema (per-tenant data).
 
-INSTALLED_APPS = [
-    "django.contrib.admin",
-    "django.contrib.auth",
+SHARED_APPS = [
+    "django_tenants",  # mandatory, must be first
+    "tenants",  # app holding the Tenant (Client) + Domain models
     "django.contrib.contenttypes",
+    "django.contrib.auth",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "django.contrib.admin",
     "django.contrib.staticfiles",
-    # Third-party
     "rest_framework",
-    # Local apps
+]
+
+TENANT_APPS = [
+    # Per-tenant auth: each tenant has its own users/groups/permissions.
+    "django.contrib.contenttypes",
+    "django.contrib.auth",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.admin",
+    "rest_framework",
+    # Local tenant-scoped apps
     "core",
 ]
+
+# De-duplicated union; SHARED_APPS first so public-schema migrations resolve.
+INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
+
+# django-tenants wiring
+TENANT_MODEL = "tenants.Client"
+TENANT_DOMAIN_MODEL = "tenants.Domain"
 
 # Django REST Framework — secure-by-default: authenticated unless explicitly opened.
 REST_FRAMEWORK = {
@@ -57,6 +84,10 @@ REST_FRAMEWORK = {
 }
 
 MIDDLEWARE = [
+    # Must come first: resolves the tenant from the request hostname and sets
+    # the DB search_path. The tenant is derived from the host, never from
+    # request body/params (RULE #1).
+    "django_tenants.middleware.main.TenantMainMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -89,14 +120,19 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# Defaults to local SQLite; set DATABASE_URL (e.g. postgres://...) in production.
-# TDR-001 mandates PostgreSQL 16 for non-local environments.
+# django-tenants requires PostgreSQL (schema-per-tenant). TDR-001 mandates
+# PostgreSQL 16; set DATABASE_URL=postgres://user:pass@host:5432/dbname.
 DATABASES = {
     "default": env.db(
         "DATABASE_URL",
-        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        default="postgres://postgres:postgres@127.0.0.1:5432/erp",
     )
 }
+# Swap in the tenant-aware backend (adds schema search_path management).
+DATABASES["default"]["ENGINE"] = "django_tenants.postgresql_backend"
+
+# Route migrations/queries to the correct schema.
+DATABASE_ROUTERS = ("django_tenants.routers.TenantSyncRouter",)
 
 
 # Password validation
