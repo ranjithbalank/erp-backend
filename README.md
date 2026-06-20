@@ -60,22 +60,35 @@ in local dev (see `ALLOWED_HOSTS`).
 
 | Requirement | Status |
 |---|---|
-| DEP-01 create/edit/activate/deactivate departments | ✅ |
-| DEP-02 unique code & name per tenant | ✅ |
-| DEP-03 parent department (hierarchy) | ✅ |
-| DEP-04 department head, DEP-06 employee count | ⏳ needs Employee model |
-| DEP-05 block delete with active employees | ⏳ soft-delete done; guard with Employee |
+| DEP-01/02/03 departments (CRUD, unique code+name, hierarchy) | ✅ |
+| DEP-05 block delete/deactivate with active employees | ✅ |
+| DEP-06 employee count per department | ✅ |
+| DEP-04 department head | ⏳ (optional; deferred) |
 | DEP-07 audit-log changes | ⏳ pending audit foundation |
+| EMP-01 register employee (personal/job/department) | ✅ |
+| EMP-02 assign department + designation | ✅ |
+| EMP-06 HR-only employee (no user account) | ✅ |
+| EMP-03/04/05/07/08/09 user provisioning & invites | ⏳ next unit |
 
 **Departments API** (auth required; tenant resolved from host):
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/departments/` | list; `?search=`, `?is_active=true`, `?ordering=code` |
+| GET | `/api/departments/` | list; `?search=`, `?is_active=true`, `?ordering=code`; includes `employee_count` |
 | POST | `/api/departments/` | `{code, name, description?, parent?}` — code normalised to UPPER |
 | GET/PATCH/PUT | `/api/departments/{id}/` | retrieve / update |
-| DELETE | `/api/departments/{id}/` | **soft-delete** (sets `is_active=false`) |
+| DELETE | `/api/departments/{id}/` | **soft-delete**; blocked if active employees (DEP-05) |
 | POST | `/api/departments/{id}/activate/` · `/deactivate/` | toggle active |
+
+**Employees API** (auth required):
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/employees/` | list; `?search=`, `?department=<id>`, `?is_active=true` |
+| POST | `/api/employees/` | `{employee_code, first_name, last_name, designation, department, work_email?, phone?, employment_type?, date_of_joining?}` |
+| GET/PATCH/PUT | `/api/employees/{id}/` | retrieve / update |
+| DELETE | `/api/employees/{id}/` | **soft-delete** (sets `is_active=false`) |
+| POST | `/api/employees/{id}/activate/` · `/deactivate/` | toggle active |
 
 ## Branching model
 
