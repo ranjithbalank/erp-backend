@@ -66,6 +66,7 @@ TENANT_APPS = [
     "rest_framework",
     # Local tenant-scoped apps
     "core",
+    "accesscontrol",  # MOD-SEC-001: departments, employees, roles, permissions
 ]
 
 # De-duplicated union; SHARED_APPS first so public-schema migrations resolve.
