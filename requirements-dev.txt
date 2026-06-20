@@ -1,0 +1,10 @@
+# Dev & CI tooling (CLAUDE.md §6, §13.5). Not installed in production images.
+-r requirements.txt
+
+ruff
+black
+bandit
+semgrep
+pip-audit
+pytest
+pytest-django

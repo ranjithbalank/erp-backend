@@ -1,0 +1,68 @@
+name: CI
+
+# Security gate per CLAUDE.md §6 / §13.6. Build fails on HIGH/CRITICAL findings.
+on:
+  push:
+    branches: [dev1, dev2, test, prod]
+  pull_request:
+    branches: [dev1, dev2, test, prod]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff black
+      - name: Ruff (lint + flake8-bandit security rules)
+        run: ruff check config core
+      - name: Black (format check)
+        run: black --check .
+
+  security:
+    name: SAST & dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install bandit semgrep pip-audit
+      - name: Bandit (fail on HIGH severity)
+        run: bandit -c pyproject.toml -r config core -lll
+      - name: Semgrep (SAST)
+        run: semgrep scan --config p/python --config p/django --config p/secrets --error
+      - name: pip-audit (dependency CVEs)
+        run: pip-audit -r requirements.txt
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest pytest-django
+      - name: Django system check
+        run: python manage.py check
+      - name: pytest
+        run: pytest -q

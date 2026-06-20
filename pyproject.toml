@@ -1,0 +1,27 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv", "**/migrations/*"]
+
+[tool.ruff.lint]
+# Default (E4/E7/E9, F) plus isort (I), bugbear (B), flake8-bandit security (S),
+# and pyupgrade (UP). Security rules (S) are the point of this gate.
+select = ["E4", "E7", "E9", "F", "I", "B", "S", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# assert is fine in tests; Django settings legitimately holds config constants.
+"**/tests.py" = ["S101"]
+"**/test_*.py" = ["S101"]
+"config/settings.py" = ["S105"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+extend-exclude = "/(\\.venv|.*/migrations)/"
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
