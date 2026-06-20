@@ -68,7 +68,18 @@ in local dev (see `ALLOWED_HOSTS`).
 | EMP-01 register employee (personal/job/department) | ✅ |
 | EMP-02 assign department + designation | ✅ |
 | EMP-06 HR-only employee (no user account) | ✅ |
-| EMP-03/04/05/07/08/09 user provisioning & invites | ⏳ next unit |
+| EMP-03 provision a user from an employee | ✅ |
+| EMP-04 require ≥1 role when provisioning | ✅ |
+| EMP-07 deactivating employee disables linked user | ✅ |
+| ROL-01/02 roles (CRUD, name/type/description) | ✅ |
+| ROL-03 predefined system roles (clone, not edit/delete) | ✅ |
+| ROL-06 block delete of an assigned role | ✅ |
+| ROL-07 user count per role | ✅ |
+| USR-01/02/03 create user (provisioned), assign roles, unique email | ✅ |
+| USR-04 user statuses (Invited/Active/Suspended/Deactivated) | ✅ (field; transitions partial) |
+| ROL-04/05 per-module action permissions & scoping | ⏳ Permission-model unit |
+| USR-05/06/07 MFA, suspend/reset, lockout · EMP-05/08/09 invite email, re-link, bulk | ⏳ |
+| DEP-07 / ROL-08 audit-log | ⏳ pending audit foundation |
 
 **Departments API** (auth required; tenant resolved from host):
 
@@ -88,7 +99,27 @@ in local dev (see `ALLOWED_HOSTS`).
 | POST | `/api/employees/` | `{employee_code, first_name, last_name, designation, department, work_email?, phone?, employment_type?, date_of_joining?}` |
 | GET/PATCH/PUT | `/api/employees/{id}/` | retrieve / update |
 | DELETE | `/api/employees/{id}/` | **soft-delete** (sets `is_active=false`) |
-| POST | `/api/employees/{id}/activate/` · `/deactivate/` | toggle active |
+| POST | `/api/employees/{id}/activate/` · `/deactivate/` | toggle active (deactivate also disables linked user — EMP-07) |
+| POST | `/api/employees/{id}/provision-user/` | create a system user from this employee: `{password, role_ids[], username?, email?}` (≥1 role required) |
+
+**Roles API** (auth required):
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/roles/` | list; `?search=`, `?is_active=`; includes `user_count` (ROL-07) |
+| POST | `/api/roles/` | `{name, description?}` — always created as a custom role |
+| GET/PATCH/PUT | `/api/roles/{id}/` | system roles cannot be edited (ROL-03) |
+| DELETE | `/api/roles/{id}/` | blocked for system roles and roles in use (ROL-03/06) |
+| POST | `/api/roles/{id}/clone/` | `{name}` → new custom copy (ROL-03) |
+| POST | `/api/roles/{id}/activate/` · `/deactivate/` | toggle active |
+
+**Users API** (auth required; users are provisioned via the employee endpoint):
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/users/` | list provisioned users with status + roles; `?search=` |
+| GET | `/api/users/{id}/` | retrieve |
+| POST | `/api/users/{id}/set-roles/` | `{role_ids[]}` replace a user's roles (USR-02) |
 
 ## Branching model
 

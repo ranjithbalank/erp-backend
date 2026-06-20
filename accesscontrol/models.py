@@ -128,3 +128,65 @@ class Employee(models.Model):
         if not self.work_email:
             self.work_email = None
         super().save(*args, **kwargs)
+
+
+class Role(models.Model):
+    """A tenant role (MOD-SEC-001, ROL-01/02/03).
+
+    A role's permission set (ROL-04/05) is built in the Permission-model unit;
+    this defines the role container + lifecycle. System roles ship predefined
+    and may be cloned but not edited or deleted (ROL-03).
+    """
+
+    class RoleType(models.TextChoices):
+        SYSTEM = "system", "System"
+        CUSTOM = "custom", "Custom"
+
+    name = models.CharField(max_length=100, unique=True)
+    role_type = models.CharField(max_length=10, choices=RoleType.choices, default=RoleType.CUSTOM)
+    description = models.TextField(blank=True, default="")
+    # System roles are protected from edit/delete (ROL-03).
+    is_system = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "role"
+        verbose_name_plural = "roles"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class UserProfile(models.Model):
+    """Per-tenant extension of the built-in auth User (MOD-SEC-001, USR-01/02/04).
+
+    AUTH_USER_MODEL is the stock auth.User (per-tenant via schema isolation);
+    this profile adds workforce status, the optional Employee link (EMP-03), and
+    the assigned roles (USR-02). A User may have no Employee and an Employee may
+    have no User (EMP-06).
+    """
+
+    class Status(models.TextChoices):
+        INVITED = "invited", "Invited"
+        ACTIVE = "active", "Active"
+        SUSPENDED = "suspended", "Suspended"
+        DEACTIVATED = "deactivated", "Deactivated"
+
+    user = models.OneToOneField("auth.User", on_delete=models.CASCADE, related_name="profile")
+    employee = models.OneToOneField(
+        "accesscontrol.Employee",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="user_profile",
+    )
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.INVITED)
+    roles = models.ManyToManyField("accesscontrol.Role", related_name="users", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.user.username} ({self.status})"
