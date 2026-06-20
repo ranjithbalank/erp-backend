@@ -54,6 +54,29 @@ Domain.objects.create(domain="acme.localhost", tenant=t, is_primary=True)
 Then reach it at `http://acme.localhost:8000/`. Any `*.localhost` host is allowed
 in local dev (see `ALLOWED_HOSTS`).
 
+## Modules
+
+### Access control — `accesscontrol` (MOD-SEC-001)
+
+| Requirement | Status |
+|---|---|
+| DEP-01 create/edit/activate/deactivate departments | ✅ |
+| DEP-02 unique code & name per tenant | ✅ |
+| DEP-03 parent department (hierarchy) | ✅ |
+| DEP-04 department head, DEP-06 employee count | ⏳ needs Employee model |
+| DEP-05 block delete with active employees | ⏳ soft-delete done; guard with Employee |
+| DEP-07 audit-log changes | ⏳ pending audit foundation |
+
+**Departments API** (auth required; tenant resolved from host):
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/departments/` | list; `?search=`, `?is_active=true`, `?ordering=code` |
+| POST | `/api/departments/` | `{code, name, description?, parent?}` — code normalised to UPPER |
+| GET/PATCH/PUT | `/api/departments/{id}/` | retrieve / update |
+| DELETE | `/api/departments/{id}/` | **soft-delete** (sets `is_active=false`) |
+| POST | `/api/departments/{id}/activate/` · `/deactivate/` | toggle active |
+
 ## Branching model
 
 Code flows **up** through four long-lived environments. You never push directly to
